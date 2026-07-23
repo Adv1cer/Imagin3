@@ -1,0 +1,38 @@
+# Poster Benchmark — FAILURE-HANDLING dataset
+#
+# Fictional, deliberately UNREACHABLE organizations (*.example). These exist
+# ONLY to exercise the harness's failure paths — brand discovery raising on
+# an unresolvable domain, the run recording a generation_error candidate and
+# continuing rather than aborting. They must NEVER appear in the runnable
+# benchmarks/poster_cases.yaml, and a real quality run must not use them.
+#
+# Safe to reference in automated tests and safe to feed to a real run only
+# to confirm graceful failure handling — no real site is contacted because
+# *.example never resolves.
+
+version: "1"
+
+cases:
+  - id: unreachable-acme
+    category: failure_unreachable_domain
+    prompt: "โปสเตอร์โปรโมตหลักสูตรสำหรับนักเรียน ม.ปลาย"
+    org_name: "Acme University"
+    official_domain: "acme.example"
+    qr_url: "https://acme.example/programs"
+    audience: "high_school_students"
+    templates: [centered_editorial]
+    aspect_ratios: ["1080x1350"]
+    seeds: [1]
+    notes: "acme.example does not resolve — brand discovery must fail; harness records generation_error and continues."
+
+  - id: unreachable-beta
+    category: failure_unreachable_domain
+    prompt: "โปสเตอร์รับสมัครนักศึกษาใหม่"
+    org_name: "Beta College"
+    official_domain: "beta.example"
+    qr_url: "https://beta.example/admissions"
+    audience: "high_school_students"
+    templates: [auto]
+    aspect_ratios: ["1080x1350"]
+    seeds: [2]
+    notes: "Second unreachable case to confirm the run finishes across multiple failures."

@@ -359,6 +359,12 @@ Vertical slice แรกจาก prompt:
 
 ### 9.1 POC Timeline (ปัจจุบัน — เป้าหมาย 2 เดือน / 8 สัปดาห์, 1 คน + AI-assisted coding)
 
+> **⚠️ POC priority correction (2026-07-23) — see `PROD.md`, which takes precedence for sequencing.**
+> เป้าหมาย POC คือ **พิสูจน์คุณภาพ generation** ไม่ใช่สร้าง production platform. ลำดับความสำคัญที่ถูกต้องคือ:
+> (1) generation-quality proof → (2) **poster quality benchmark** (`imagin.benchmark`) → (3) Central Brain / prompt-derived copy → (4) general-image quality → (5) infographic proof → (6) image-edit proof → (7) human quality evaluation → (8) thin demo UI.
+>
+> **Compute Gateway ในช่วง POC จำกัดแค่ sequential execution (concurrency 1) + การวัด memory/latency เท่านั้น** — ตารางสัปดาห์ด้านล่าง (โดยเฉพาะ Week 2 GPU semaphore/model lifecycle/webhook และ Week 6 API/SSE) เป็น production-shaped vision ที่ **ถูกเลื่อน**: production multi-user API, Redis/Celery queue, RBAC, authentication, multi-user scaling, deployment hardening ทั้งหมด deferred จนกว่า quality hypotheses จะผ่าน. `overall_status=pass` = technical correctness เท่านั้น ไม่ใช่ human visual/semantic approval.
+
 ตัดออกจากแผนเดิมทั้งหมด: F3 brand automation (ใช้ hardcoded Brand Pack แทน), F6 formal docs (SRS/architecture doc เต็มรูปแบบ), F7 benchmark เต็มขนาด (100+100+50 prompts → เหลือ ~10–20 พอตรวจสอบได้), Konva/Fabric.js manual canvas editing, concurrent-user hardening
 
 | สัปดาห์ | งาน |

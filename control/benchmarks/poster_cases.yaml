@@ -1,0 +1,96 @@
+# Poster Quality Benchmark — RUNNABLE dataset v1
+#
+# Every case here MUST be runnable against an explicitly-approved real
+# domain. For the initial POC it is acceptable to use UTCC across multiple
+# prompt categories to test generation quality — the goal right now is to
+# stress the pipeline over varied intents/templates/aspect ratios/seeds,
+# not to test many organizations (that comes once brand discovery is being
+# quality-benchmarked in its own right).
+#
+# QR urls use the verified UTCC root only. Category-specific deep links are
+# NOT fabricated here (PROD §7.4: a QR destination must be verified, never
+# guessed) — supply a verified deep link per case when one exists.
+#
+# IMPORTANT: poster copy is still the hardcoded Week-1 fixture, so every
+# candidate renders the same Thai headline/body/CTA regardless of prompt.
+# That is expected; reviewers should score semantic_correctness low. Do NOT
+# run this whole benchmark for real until Phase 2 (prompt-derived copy) —
+# dozens of predetermined semantic failures would burn DGX compute without
+# proving a useful hypothesis. Use a one-candidate smoke test until then.
+#
+# Fictional/unreachable domains for failure-handling live in the SEPARATE
+# benchmarks/poster_failure_cases.yaml, never here.
+
+version: "1"
+
+cases:
+  - id: utcc-open-house
+    category: university_open_house
+    prompt: "ทำโปสเตอร์โปรโมต UTCC สำหรับนักเรียน ม.ปลาย"
+    org_name: "มหาวิทยาลัยหอการค้าไทย"
+    official_domain: "www.utcc.ac.th"
+    qr_url: "https://www.utcc.ac.th/"
+    audience: "high_school_students"
+    templates: [centered_editorial]
+    aspect_ratios: ["1080x1350"]
+    seeds: [42, 99]
+    notes: "Reference case matching the verified Week-1 exit-evidence run."
+
+  - id: utcc-course-promo
+    category: course_program_promotion
+    prompt: "โปสเตอร์โปรโมตหลักสูตรของมหาวิทยาลัยหอการค้าไทยสำหรับผู้สนใจเรียนต่อ ภาพด้านซ้าย"
+    org_name: "มหาวิทยาลัยหอการค้าไทย"
+    official_domain: "www.utcc.ac.th"
+    qr_url: "https://www.utcc.ac.th/"
+    audience: "prospective_students"
+    templates: [centered_editorial, hero_split_left]
+    aspect_ratios: ["1080x1350"]
+    seeds: [7]
+    notes: "Exercises the split-left template alongside centered."
+
+  - id: utcc-event-announce
+    category: event_announcement
+    prompt: "โปสเตอร์ประกาศงานกิจกรรมของมหาวิทยาลัยหอการค้าไทย ภาพด้านขวา"
+    org_name: "มหาวิทยาลัยหอการค้าไทย"
+    official_domain: "www.utcc.ac.th"
+    qr_url: "https://www.utcc.ac.th/"
+    audience: "general_public"
+    templates: [hero_split_right]
+    aspect_ratios: ["1350x1080"]
+    seeds: [15]
+    notes: "Exercises the split-right template in landscape orientation."
+
+  - id: utcc-recruitment
+    category: recruitment_admission
+    prompt: "โปสเตอร์รับสมัครนักศึกษาใหม่มหาวิทยาลัยหอการค้าไทย"
+    org_name: "มหาวิทยาลัยหอการค้าไทย"
+    official_domain: "www.utcc.ac.th"
+    qr_url: "https://www.utcc.ac.th/"
+    audience: "high_school_students"
+    templates: [centered_editorial]
+    aspect_ratios: ["1080x1350", "1080x1080"]
+    seeds: [3]
+    notes: "Portrait + square aspect coverage on one runnable domain."
+
+  - id: utcc-branding
+    category: institutional_branding
+    prompt: "โปสเตอร์แนะนำอัตลักษณ์และวิสัยทัศน์ของมหาวิทยาลัยหอการค้าไทย"
+    org_name: "มหาวิทยาลัยหอการค้าไทย"
+    official_domain: "www.utcc.ac.th"
+    qr_url: "https://www.utcc.ac.th/"
+    audience: "stakeholders"
+    templates: [auto]
+    aspect_ratios: ["1080x1350"]
+    seeds: [21]
+    notes: "auto selection should pick centered_editorial for a generic institutional prompt."
+
+  - id: utcc-info-dense
+    category: information_dense
+    prompt: "โปสเตอร์ให้ข้อมูลกำหนดการและรายละเอียดการสมัครของมหาวิทยาลัยหอการค้าไทย"
+    org_name: "มหาวิทยาลัยหอการค้าไทย"
+    official_domain: "www.utcc.ac.th"
+    qr_url: "https://www.utcc.ac.th/"
+    audience: "applicants"
+    templates: [centered_editorial]
+    aspect_ratios: ["1080x1350"]
+    seeds: [11]

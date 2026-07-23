@@ -224,12 +224,16 @@ def run_poster_generation(
     background_max_retries: int = DEFAULT_BACKGROUND_MAX_RETRIES,
     template_id: str | None = None,
     subject_detector: SubjectDetector | None = None,
+    width: int = 1080,
+    height: int = 1350,
 ) -> PipelineResult:
     resolved_brand = resolve_brand(session, org_name, official_domain, http_client, object_store)
     logo_png = object_store.get(resolved_brand.logo_storage_key)
 
     # ONE design spec, built once, consumed by BOTH the background prompt
-    # builder and the compositor — the shared layout contract.
+    # builder and the compositor — the shared layout contract. width/height
+    # let the benchmark harness request multiple aspect ratios; the same
+    # normalized template projects onto whatever canvas is requested.
     spec = build_poster_design_spec(
         prompt=prompt,
         brand_profile_id=str(resolved_brand.brand_profile_id),
@@ -237,6 +241,8 @@ def run_poster_generation(
         qr_target_url=qr_target_url,
         template_id=template_id,
         logo_png=logo_png,
+        width=width,
+        height=height,
     )
 
     hero_prompt = build_hero_prompt(prompt, spec.template)
