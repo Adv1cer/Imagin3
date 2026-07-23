@@ -1,0 +1,1071 @@
+สรุปโครงการ Imagin หลังรวบรวม Context ทั้งหมด
+คำตัดสินก่อนออกแบบ
+
+โครงการนี้ มีโอกาสสำเร็จประมาณ 85–90% สำหรับ MVP ภายใต้เงื่อนไขต่อไปนี้:
+
+ผู้ใช้สั่งด้วยภาษาธรรมชาติหนึ่งข้อความ
+ระบบค้นข้อมูล วางแผน และสร้างโปสเตอร์อัตโนมัติ
+มีมนุษย์ตรวจผลงานตอนท้ายก่อนนำไปเผยแพร่
+การประมวลผลหลักทั้งหมดอยู่บน DGX Spark
+ข้อความ โลโก้ QR code และกราฟ ไม่ได้ให้ image model วาดเอง
+ระบบใช้ verified assets และ deterministic compositor
+ไม่พยายามฝึก foundation image model ใหม่ตั้งแต่ต้น
+
+สิ่งที่ไม่ควรทำคือ:
+
+Prompt → Image model → หวังให้ได้โปสเตอร์สำเร็จทั้งแผ่น
+
+สิ่งที่ควรทำคือ:
+
+Prompt
+→ Research
+→ Verified facts/assets
+→ Design planning
+→ Image generation
+→ Deterministic composition
+→ Automated QA
+→ Human review
+
+DGX Spark มี unified memory 128 GB และ memory bandwidth 273 GB/s จึงเพียงพอสำหรับ local inference, RAG, OCR, image generation และ adapter experimentation แต่ต้องบริหาร lifecycle ของโมเดล ไม่ควรโหลด LLM ขนาดใหญ่กับ image model ทุกตัวพร้อมกันตลอดเวลา.
+
+1. Product Definition ที่ควร Freeze ก่อนเริ่มพัฒนา
+ชื่อระบบ
+
+Imagin — On-Premise AI Design and Image Generation Platform
+
+ประสบการณ์ของผู้ใช้
+
+ผู้ใช้พิมพ์:
+
+ทำโปสเตอร์โปรโมตมหาวิทยาลัยหอการค้าไทย สำหรับนักเรียน ม.ปลาย โทนทันสมัย เน้นผู้ประกอบการ
+
+ระบบทำงานเอง:
+
+เข้าใจวัตถุประสงค์
+ตรวจว่า UTCC คือองค์กรใด
+ค้นข้อมูลจากแหล่งทางการ
+หาโลโก้และ Brand Pack
+เลือกเนื้อหาที่ควรใส่
+เขียนข้อความโฆษณา
+เลือก template, สี, ฟอนต์ และลำดับข้อมูล
+สร้างภาพคนหรือฉาก
+วางข้อความ โลโก้ QR และองค์ประกอบ
+ตรวจความถูกต้อง
+ส่ง 2–3 แบบให้ผู้ใช้ review
+Operating modes
+
+ระบบควรมีสามโหมดชัดเจน:
+
+general_image
+
+สร้างคน หมา แมว บ้าน สินค้า ฉาก หรือภาพทั่วไป โดยไม่ผ่าน design compositor เต็มระบบ
+
+poster
+
+สร้างงานที่มี:
+
+Hero image
+Headline
+Supporting copy
+CTA
+Logo
+QR
+Contact/footer
+infographic
+
+สร้างงานที่มี:
+
+Verified facts
+Stat cards
+Timeline
+Comparison
+Icons
+กราฟแบบ deterministic
+Sources
+2. Scope ของ MVP
+สิ่งที่ MVP ต้องทำได้
+Poster แนวตั้ง 1024×1536 และ 1080×1350
+ภาษาไทยและอังกฤษ
+5–8 templates
+Headline, subtitle, body, CTA, footer
+Logo จริงจาก asset registry
+QR code ที่สแกนได้
+ภาพคน สัตว์ บ้าน และวัตถุ
+Research จากเว็บไซต์ทางการ
+เก็บ source ของ factual claim
+สร้าง 2–3 candidates
+Human review ก่อน export
+Export PNG, JPEG และ design JSON
+Queue สำหรับ GPU
+ทำงาน on-premise
+สิ่งที่ไม่อยู่ใน MVP
+ฝึก Qwen-Image ใหม่ทั้งโมเดล
+สร้าง AR image model
+สร้าง VQ-VAE ใหม่
+ให้โมเดลวาดโลโก้
+ให้ diffusion วาด body text
+รองรับทุกแบรนด์ในโลกแบบเชื่อถือได้ทันที
+ตัดสินสิทธิ์การใช้เครื่องหมายการค้าอัตโนมัติ 100%
+รองรับผู้ใช้พร้อมกันจำนวนมาก
+ทำ slide deck หลายสิบหน้า
+ปล่อยผลงานไป social media โดยไม่ review
+3. Architecture หลัก
+┌──────────────────────────────────────────────────────┐
+│                    Next.js Frontend                  │
+│ Prompt / Mode / Review / Edit / History / Sources   │
+└──────────────────────────┬───────────────────────────┘
+                           │ REST + WebSocket/SSE
+                           ▼
+┌──────────────────────────────────────────────────────┐
+│                  FastAPI API Gateway                 │
+│ Auth / Validation / Job API / Asset API / Results   │
+└──────────────────────────┬───────────────────────────┘
+                           ▼
+┌──────────────────────────────────────────────────────┐
+│                  Workflow Orchestrator               │
+│ Job state / Retry / Timeout / Routing / Model load   │
+└───────┬──────────┬──────────┬──────────┬─────────────┘
+        │          │          │          │
+        ▼          ▼          ▼          ▼
+  Intent &     Research    Brand &    Design
+  Planning     Pipeline    Asset       Planner
+  LLM                      Resolver
+        │          │          │          │
+        └──────────┴────┬─────┴──────────┘
+                        ▼
+             Structured DesignSpec
+                        │
+              ┌─────────┴──────────┐
+              ▼                    ▼
+        Image Generator      Deterministic
+        ComfyUI/Qwen         Layout Engine
+              │                    │
+              └─────────┬──────────┘
+                        ▼
+                 Final Compositor
+          Thai text / Logo / QR / Charts
+                        │
+                        ▼
+                 Automated QA
+       OCR / Fact / Logo / QR / Layout / Contrast
+                        │
+                        ▼
+                  Human Review UI
+                        │
+                        ▼
+                 Export / Versioning
+4. Technology Stack ที่แนะนำ
+4.1 Frontend
+ส่วน	เทคโนโลยี
+Framework	Next.js App Router + TypeScript
+Styling	Tailwind CSS + Shadcn UI
+State	Zustand หรือ React Query
+Job progress	Server-Sent Events หรือ WebSocket
+Poster review	Canvas/SVG preview
+Manual adjustment	Konva.js หรือ Fabric.js
+Authentication	NextAuth หรือ internal SSO
+
+Frontend ไม่ควรรับผิดชอบ logic ของ AI แต่ควรทำหน้าที่:
+
+รับ prompt
+แสดงขั้นตอนงาน
+แสดง sources
+ให้เลือก candidate
+แก้ข้อความ
+ขยับองค์ประกอบเล็กน้อย
+regenerate เฉพาะส่วน
+approve และ export
+4.2 Backend และ Orchestration
+ส่วน	เทคโนโลยี
+Main API	FastAPI
+Validation	Pydantic
+Job queue	Redis + Celery/Dramatiq
+Job state	PostgreSQL
+Real-time update	SSE หรือ Redis Pub/Sub
+Workflow definitions	Python state machine
+Containerization	Docker Compose
+Production proxy	Nginx หรือ Traefik
+
+สำหรับเครื่องเดียว Redis + Celery เพียงพอกว่า Temporal ซึ่งจะเพิ่ม operational overhead โดยไม่จำเป็นใน MVP
+
+สถานะของงานควรถูกบันทึกเป็น:
+
+CREATED
+→ INTERPRETING
+→ RESEARCHING
+→ VERIFYING
+→ PLANNING
+→ GENERATING_VISUAL
+→ COMPOSING
+→ QA_CHECKING
+→ READY_FOR_REVIEW
+→ APPROVED / REJECTED / FAILED
+5. Model Architecture
+5.1 Planner LLM
+Baseline ที่แนะนำ
+Qwen3-30B-A3B-Instruct-2507
+
+ใช้สำหรับ:
+
+วิเคราะห์ intent
+สร้าง research plan
+เลือกข้อมูล
+เขียน copy ภาษาไทย
+สร้าง DesignSpec JSON
+เรียก tools
+ประเมิน confidence
+สร้าง repair instructions
+
+Qwen3 มีรุ่น 30B-A3B ซึ่งเป็น Mixture-of-Experts และ repository ทางการรองรับ local inference ผ่าน Transformers, llama.cpp, Ollama, vLLM และ SGLang รวมถึงระบุความสามารถด้าน tool use และ multilingual instruction following.
+
+วิธี serve
+
+MVP ใช้ของที่คุณมีอยู่แล้ว:
+
+Ollama
+
+แต่ต้อง:
+
+pin exact model digest
+ห้ามใช้ tag latest
+กำหนด context size
+มี JSON schema validation
+retry หาก output ไม่ผ่าน schema
+
+Production สามารถขยับไป:
+
+vLLM หรือ llama.cpp server
+
+สำหรับ request ที่ซับซ้อนมาก ค่อย route ไป thinking model ไม่ควรใช้ thinking model ทุกงานเพราะช้าเกินจำเป็น
+
+5.2 Image Generator
+Production baseline
+Qwen-Image-2512
+
+เหตุผล:
+
+มี weights สำหรับ local inference
+ทำ image generation และ text-rich composition ได้
+รองรับ Diffusers
+รองรับ ComfyUI โดยตรง
+เหมาะกับคน สัตว์ บ้าน ฉาก และงานออกแบบ
+Apache 2.0 สำหรับตัว repository/model ตามที่โครงการระบุ
+
+Qwen-Image รุ่นพื้นฐานเป็น 20B MMDiT และ official repository มี Qwen-Image-2512 weights พร้อมตัวอย่าง local inference; Qwen-Image รองรับ ComfyUI โดยตรงแล้ว.
+
+สิ่งที่ควรรอ
+
+Qwen-Image-2.0 ถูกประกาศแล้วว่ามีความสามารถด้าน typography, poster และ infographic ดีขึ้น แต่ใน architecture รุ่นแรกไม่ควรพึ่งพารุ่นที่ deployment path หรือ weights ยังไม่ผ่านการทดสอบในระบบของคุณ.
+
+Image editing
+
+ในระยะถัดไปสามารถใช้:
+
+Qwen-Image-Edit-2511
+
+สำหรับ:
+
+เปลี่ยน background
+ซ่อมองค์ประกอบ
+ขยายพื้นที่ว่าง
+ย้าย subject
+harmonization
+
+แต่ไม่ควรใช้ edit model เพื่อแก้ข้อความ เพราะมันอาจเปลี่ยนตัวสะกด
+
+5.3 AnyText2 และ Thai Fine-tuning
+
+หลังตรวจข้อมูลใหม่ ไม่ควรให้ AnyText2XL เป็น production backbone ใน Phase แรก
+
+เหตุผลคือ repository ทางการเผยแพร่ code, checkpoint และ dataset ของ AnyText2 แล้ว แต่หน้า repository ยังคงแสดง SDXL version เป็น TODO จึงควรใช้ AnyText2 เป็น research reference และ experimental branch แยกจาก production.
+
+บทบาทของ AnyText2 ในโครงการนี้:
+
+ศึกษา WriteNet+AttnX
+ศึกษา font/color conditioning
+ทำ Thai glyph adapter experiment
+เปรียบเทียบกับ deterministic compositor
+ไม่เป็น dependency บังคับของ MVP
+
+AnyText2 ออกแบบเพื่อเพิ่มการควบคุม font และ color ของข้อความผ่าน WriteNet+AttnX และ Text Embedding Module ซึ่งยังมีประโยชน์ต่อการออกแบบ research track ภาษาไทย.
+
+6. Thai Typography Architecture
+หลักการสำคัญ
+
+ข้อความไทย final ต้องไม่ออกมาจาก diffusion model โดยตรง
+
+ใช้:
+
+Unicode Thai text
+→ Normalize
+→ Pango layout
+→ HarfBuzz shaping
+→ FreeType glyph
+→ Cairo/SVG rendering
+→ Final composition
+
+HarfBuzz แปลง Unicode ให้เป็น glyph ที่ถูกจัดรูปและจัดตำแหน่งตามระบบตัวเขียน จึงเหมาะกับสระและวรรณยุกต์ไทยมากกว่าการวาด character ทีละตัว.
+
+Technology
+งาน	เครื่องมือ
+Thai shaping	HarfBuzz
+Paragraph layout	Pango
+Font rasterization	FreeType
+Vector rendering	Cairo หรือ SVG
+Image composition	libvips / pyvips
+SVG rendering	librsvg หรือ resvg
+QR generation	Python qrcode
+QR validation	OpenCV/ZXing/ZBar
+Layout Engine ต้องรองรับ
+Auto font sizing
+Thai line breaking
+Maximum line count
+Text overflow detection
+Headline/subtitle/body hierarchy
+Font pairing
+Contrast checking
+Safe margin
+Alignment
+Baseline and line height
+Text background panel
+Stroke, shadow และ texture
+Responsive layout ตาม aspect ratio
+7. Research and Retrieval Architecture
+On-premise หมายถึงอะไรในระบบนี้
+
+สิ่งต่อไปนี้อยู่ภายใน:
+
+LLM inference
+Embeddings
+Vector database
+Crawled documents
+Assets
+Prompt และ user data
+Image generation
+OCR
+Final outputs
+Logs
+
+แต่ระบบต้องมี outbound internet access เพื่อค้นข้อมูลล่าสุด
+
+ถ้าห้ามออกอินเทอร์เน็ตทั้งหมด ระบบจะใช้ได้เฉพาะข้อมูลที่ import หรือ sync เข้ามาก่อนเท่านั้น
+
+Search pipeline
+Research query
+→ SearXNG
+→ Filter official domains
+→ Fetch page
+→ Extract text/assets
+→ Store snapshot
+→ Chunk + embedding
+→ Rerank
+→ Extract claims
+→ Cross-check
+→ ResearchPack
+
+SearXNG สามารถ self-host และเรียกผ่าน HTTP Search API ได้ แต่ตัวระบบยังรวบรวมผลจาก search services ภายนอก จึงเป็น on-premise search gateway ไม่ใช่ offline search engine.
+
+เทคโนโลยี
+ส่วน	เทคโนโลยี
+Search gateway	SearXNG
+Browser	Playwright
+HTML extraction	Trafilatura + BeautifulSoup
+PDF extraction	PyMuPDF
+Document storage	PostgreSQL
+Semantic retrieval	PostgreSQL + pgvector
+Optional scale-up	Qdrant
+Asset storage	MinIO
+Snapshot hashing	SHA-256
+Scheduling	Celery Beat
+
+Qdrant สามารถ self-host ผ่าน Docker และรองรับ metadata filtering กับ vector search แต่สำหรับ MVP ใช้ PostgreSQL + pgvector ก่อนเพื่อลดจำนวน service แล้วจึงเพิ่ม Qdrant เมื่อ corpus ใหญ่ขึ้น.
+
+8. Fact Verification Design
+
+ทุก factual claim ต้องอยู่ในโครงสร้าง:
+
+{
+  "claim": "เปิดรับสมัครนักศึกษาใหม่",
+  "claim_type": "admission",
+  "source_url": "official-source",
+  "source_domain": "example.ac.th",
+  "retrieved_at": "timestamp",
+  "published_at": "timestamp-or-null",
+  "evidence_text": "source excerpt",
+  "confidence": 0.94,
+  "status": "verified"
+}
+Source priority
+1. Official brand/media kit
+2. Official organization website
+3. Official admissions/product/event page
+4. Official PDF or brochure
+5. Official social account
+6. Trusted third-party reference
+
+ข้อมูลเสี่ยงสูงต้องใช้ official source เท่านั้น:
+
+วันและเวลา
+ราคา
+ทุน
+โปรโมชั่น
+การรับสมัคร
+Partnership
+Contact
+URL
+เบอร์โทร
+ชื่อหลักสูตร
+Confidence behavior
+Confidence	การทำงาน
+≥ 0.90	ใช้ในโปสเตอร์ได้
+0.70–0.89	ใช้ได้เมื่อมี official source ชัด
+0.50–0.69	ไม่ใช้เป็น factual claim
+< 0.50	ตัดออก
+
+ข้อความการตลาดที่ LLM แต่งเองต้องถูกแยกจาก factual claim เช่น:
+
+{
+  "text": "เปลี่ยนไอเดียให้เป็นธุรกิจจริง",
+  "type": "generated_marketing_copy",
+  "official_claim": false
+}
+9. Brand Asset Registry
+
+นี่คือส่วนที่ทำให้โลโก้ “เป๊ะ”
+
+Brand Registry
+├── Organization identity
+├── Verified domains
+├── Logo files
+├── Logo variants
+├── Brand colors
+├── Approved fonts
+├── Clear-space rules
+├── Official URLs
+├── Social accounts
+├── Source snapshots
+└── Verification history
+Logo record
+{
+  "asset_id": "utcc-logo-primary",
+  "brand_id": "utcc",
+  "type": "logo",
+  "variant": "primary-on-light",
+  "format": "svg",
+  "storage_path": "brands/utcc/logo-primary.svg",
+  "source_domain": "utcc.ac.th",
+  "source_page": "official-page",
+  "sha256": "asset-hash",
+  "verified": true,
+  "verified_at": "timestamp",
+  "minimum_width_px": 120,
+  "safe_space_ratio": 0.15
+}
+Asset policy
+Logo ต้องมาจาก verified asset เท่านั้น
+ห้าม generate logo
+ห้ามใช้ fake logo เป็น fallback
+ไม่พบ logo ให้ใช้ organization name แบบ text-only
+Partner logo ต้อง verify แยกจาก organization logo
+เก็บ source และ timestamp
+ห้ามแก้ aspect ratio
+ห้าม recolor นอก variant ที่อนุญาต
+ห้าม crop logo
+10. Design Planning Engine
+
+Planner ต้องสร้าง DesignSpec ก่อนเข้า image generation
+
+{
+  "mode": "poster",
+  "canvas": {
+    "width": 1024,
+    "height": 1536
+  },
+  "goal": "student_recruitment",
+  "audience": "high_school_students",
+  "style": "youthful_business",
+  "template": "hero_split_right",
+  "palette": {},
+  "typography": {},
+  "visual_prompt": {},
+  "regions": [],
+  "copy_blocks": [],
+  "assets": [],
+  "qa_constraints": []
+}
+Template System
+
+MVP เริ่มที่:
+
+hero_split_right
+hero_split_left
+centered_editorial
+diagonal_energy
+modular_grid
+stat_cards
+event_announcement
+product_promotion
+
+แต่ละ template ต้องกำหนด:
+
+Region constraints
+Minimum/maximum text length
+Safe zone
+Image area
+Logo area
+CTA area
+Font size ranges
+Mobile readability
+Visual balance rules
+
+อย่าให้ LLM สร้าง pixel coordinates แบบอิสระทั้งหมด ให้เลือก template แล้วปรับค่าภายในข้อจำกัด
+
+11. GPU and Model Lifecycle
+
+DGX Spark เครื่องเดียวควรมี GPU queue เดียวใน MVP
+
+Research phase
+├── Planner LLM
+├── Embedding
+└── Reranker
+
+Design phase
+└── Planner LLM
+
+Image phase
+├── Unload หรือ offload LLM
+├── Load Qwen-Image
+└── Generate candidates
+
+QA phase
+├── Release image model memory
+├── Load OCR/VLM
+└── Validate output
+Resource policy
+Image generation concurrency: 1
+Research jobs สามารถทำหลายงานบน CPU
+GPU jobs เข้า FIFO หรือ priority queue
+จำกัดจำนวน candidates ต่อ job
+มี hard timeout
+มี model unload หลัง idle
+ห้ามใช้ latest model tag
+บันทึก model hash ทุก output
+บันทึก seed และ workflow version
+12. Automated QA
+12.1 Text QA
+
+ใช้ PaddleOCR เป็น checker เพิ่มเติม โดย PP-OCRv5 มี multilingual recognition ที่รวมภาษาไทย และสามารถรัน local ได้.
+
+ตรวจ:
+
+Exact text
+Character error rate
+Text overflow
+Missing text
+Duplicate text
+Thai combining marks
+Contrast
+Text size
+Safe margin
+
+อย่างไรก็ตาม deterministic compositor เป็น source of truth ส่วน OCR ใช้ตรวจว่าภาพที่ export ยังอ่านได้
+
+12.2 Logo QA
+SHA-256 ตรงกับ registry
+Aspect ratio ไม่เปลี่ยน
+ไม่โดน crop
+Minimum size ผ่าน
+Contrast ผ่าน
+ใช้ variant ถูกกับพื้นหลัง
+ไม่มีโลโก้ปลอมใน generated background
+
+จุดสุดท้ายต้องตรวจด้วย image similarity หรือ segmentation และสามารถ mask logo zone ก่อนเจนภาพเพื่อลดโอกาสเกิด fake marks
+
+12.3 QR QA
+Decode ได้
+URL ตรงกับ DesignSpec
+Quiet zone ครบ
+Contrast ผ่าน
+ขนาดขั้นต่ำผ่าน
+12.4 Factual QA
+ทุก factual claim มี source
+Source ยังเข้าถึงได้
+Domain อยู่ใน allowlist
+วันที่ไม่หมดอายุ
+Claim ไม่มี conflict
+Generated marketing copy ไม่ถูกระบุว่าเป็น official quote
+12.5 Visual QA
+Text overlap
+Subject overlap
+Edge collision
+Empty space
+Alignment
+Hierarchy
+Logo prominence
+Image artifacts
+Extra fingers/face problems
+Unwanted fake writing
+13. Data Models หลัก
+
+ระบบควรมี object หลักห้าตัว:
+
+ResearchPack
+
+ข้อมูลและหลักฐานที่ค้นพบ
+
+BrandPack
+
+โลโก้ สี ฟอนต์ และ brand constraints
+
+DesignBrief
+
+เป้าหมาย กลุ่มผู้ชม และ communication strategy
+
+DesignSpec
+
+layout, text, asset และ image prompts ที่พร้อม render
+
+QAReport
+
+ผลตรวจทั้งหมดและ repair instructions
+
+การบังคับให้ทุก stage สื่อสารผ่าน structured objects ช่วยป้องกัน LLM ส่งข้อความอิสระจน pipeline ควบคุมไม่ได้
+
+14. API หลัก
+POST /api/v1/generations
+GET  /api/v1/generations/{id}
+GET  /api/v1/generations/{id}/events
+POST /api/v1/generations/{id}/approve
+POST /api/v1/generations/{id}/regenerate
+POST /api/v1/generations/{id}/repair
+POST /api/v1/generations/{id}/export
+
+GET  /api/v1/brands
+POST /api/v1/brands/resolve
+GET  /api/v1/brands/{id}
+POST /api/v1/brands/{id}/verify
+
+GET  /api/v1/assets/{id}
+POST /api/v1/assets/import
+POST /api/v1/assets/verify
+
+GET  /api/v1/research/{id}
+GET  /api/v1/research/{id}/sources
+
+Request เริ่มต้น:
+
+{
+  "prompt": "ทำโปสเตอร์โปรโมตมหาวิทยาลัยหอการค้าไทย",
+  "mode": "poster",
+  "output": {
+    "width": 1024,
+    "height": 1536,
+    "count": 3
+  },
+  "research": {
+    "enabled": true,
+    "official_sources_only": true
+  }
+}
+15. Waterfall Development Plan
+
+สำหรับงาน AI ไม่ควรใช้ Waterfall แบบล็อกทุกอย่างทันที เพราะยังมี technical uncertainty เรื่องคุณภาพโมเดล จึงควรมี Phase 0 Technical Feasibility ก่อน freeze architecture แล้วจึงเดิน Waterfall ต่อ
+
+Phase 0 — Feasibility Study
+
+ระยะเวลา: 2–4 สัปดาห์
+
+ทำอะไร
+ทดสอบ Qwen-Image-2512 บน DGX
+วัด memory และเวลาสร้างภาพ
+ทดสอบ Qwen3 planner
+ทดสอบ unload/load model
+ทำ Pango/HarfBuzz Thai renderer
+ทำ logo composition
+ทำ QR generation
+ทำ poster หนึ่ง template
+ทดสอบ PaddleOCR ภาษาไทย
+สร้าง UTCC Brand Pack แบบ manual
+ทำ end-to-end prototype หนึ่งเส้นทาง
+Deliverables
+Benchmark report
+Memory profile
+Sample posters 20–30 ภาพ
+Thai rendering test
+Architecture risk report
+Go/No-Go decision
+Exit criteria
+DGX สร้างภาพได้โดยไม่ OOM
+ข้อความไทยออกตรง input 100%
+Logo asset ไม่ถูก generate
+QR decode ได้
+End-to-end pipeline ทำงานหนึ่งรอบ
+Output คุณภาพผ่าน human review ขั้นต้น
+Phase 1 — Requirement Analysis
+
+ระยะเวลา: 1–2 สัปดาห์
+
+เอกสารที่ต้องทำ
+Software Requirements Specification
+User roles
+Use cases
+Supported modes
+Supported formats
+Functional requirements
+Non-functional requirements
+Privacy requirements
+Security requirements
+Definition of Done
+Acceptance criteria
+Use cases หลัก
+UC-01 Generate general image
+UC-02 Generate poster with known brand
+UC-03 Generate poster with unknown brand
+UC-04 Generate infographic
+UC-05 Review and approve
+UC-06 Edit copy and recompose
+UC-07 Replace image
+UC-08 Regenerate candidate
+UC-09 Import/verify brand asset
+UC-10 Export final design
+Exit criteria
+Stakeholder ยอมรับ scope
+แยก MVP กับ future scope ชัดเจน
+ไม่มี requirement ขัดกัน
+นิยาม on-premise และ internet access ชัดเจน
+Phase 2 — System Architecture Design
+
+ระยะเวลา: 2–3 สัปดาห์
+
+เอกสาร
+System Architecture Document
+Container diagram
+Sequence diagram
+Data flow diagram
+Deployment diagram
+Network boundary
+Threat model
+Model lifecycle design
+Storage design
+Failure and retry design
+Architecture Decision Records
+Decisions ที่ต้อง freeze
+Next.js + FastAPI
+Redis queue
+PostgreSQL
+MinIO
+SearXNG
+Ollama/vLLM
+Qwen-Image-2512
+Pango/HarfBuzz compositor
+PaddleOCR
+ComfyUI worker
+One GPU generation worker
+Exit criteria
+ทุก component มี owner
+ทุก API มี contract
+Data flow ไม่มี circular dependency
+Memory budget ผ่าน
+Security boundary ผ่าน
+Backup และ recovery ถูกกำหนด
+Phase 3 — Detailed Design
+
+ระยะเวลา: 3–4 สัปดาห์
+
+ออกแบบ
+Database schema
+Pydantic schemas
+DesignSpec schema
+BrandPack schema
+ResearchPack schema
+QAReport schema
+Template definitions
+Typography rules
+Asset verification rules
+Prompt templates
+Workflow state machine
+Error codes
+Audit logs
+UI wireframes
+ต้องทำ test specification ก่อนเขียน implementation
+Unit test plan
+Integration test plan
+Golden poster set
+Thai text benchmark
+Brand asset benchmark
+Research verification benchmark
+Regression prompts
+Exit criteria
+Dev สามารถ implement โดยไม่ต้องเดา architecture
+JSON schemas ผ่าน review
+Template rules ผ่าน designer review
+Test cases ครอบคลุม acceptance criteria
+Phase 4 — Implementation
+
+ระยะเวลา: 8–12 สัปดาห์
+
+Work package A — Foundation
+Repository structure
+Docker Compose
+Configuration management
+Secrets management
+Logging
+PostgreSQL
+Redis
+MinIO
+Health checks
+Work package B — Research
+SearXNG integration
+Crawler
+Official-domain filter
+HTML/PDF extraction
+Source snapshots
+Claim extraction
+Citation storage
+Confidence scoring
+Work package C — Brand assets
+Brand registry
+Logo candidate resolver
+Asset download
+Hashing
+Verification UI
+Variant selection
+Logo placement rules
+Work package D — AI planning
+Intent classifier
+Research planner
+Content synthesizer
+Design planner
+Schema repair
+Tool calling
+Model lifecycle
+Work package E — Image generation
+Qwen-Image workflow
+ComfyUI API
+Queue
+Candidate generation
+Seed management
+Image masking
+Negative constraints
+Work package F — Design compositor
+Pango/HarfBuzz
+Text fitting
+Font pairing
+SVG layout
+Logo compositor
+QR compositor
+Icon and chart renderer
+Export pipeline
+Work package G — QA
+OCR
+QR validation
+Logo validation
+Layout validation
+Fact validation
+Automatic repair loop
+Work package H — Frontend
+Prompt screen
+Job progress
+Candidate gallery
+Sources panel
+Review/edit screen
+Export
+Job history
+Phase 5 — Integration and System Testing
+
+ระยะเวลา: 4–6 สัปดาห์
+
+Test sets
+100 general image prompts
+100 poster prompts
+50 infographic prompts
+500 Thai text strings
+20 known brands
+20 unknown brands
+20 expired/outdated data scenarios
+20 incorrect-logo traps
+20 QR tests
+20 network failure tests
+Acceptance metrics
+Metric	Target
+Exact final text	100%
+QR decode success	100%
+Verified logo integrity	100%
+Text overflow	0
+Unsupported factual claims	0
+Job recovery after retryable failure	≥ 95%
+Human design rating	≥ 4/5
+Poster accepted without major edit	≥ 75%
+Known-brand publishable output	≥ 85%
+Phase 6 — User Acceptance Testing
+
+ระยะเวลา: 2–4 สัปดาห์
+
+ให้กลุ่มผู้ใช้จริงทดลอง:
+
+Marketing
+Designer
+University staff
+Content creator
+General user
+
+เก็บข้อมูล:
+
+Prompt ที่ใช้จริง
+เวลาตั้งแต่สั่งถึงได้ภาพ
+จำนวนครั้งที่ regenerate
+จุดที่ผู้ใช้แก้
+เหตุผลที่ reject
+Brand/data errors
+Design preference
+
+Exit criteria:
+
+ไม่มี critical factual error
+ไม่มี fake logo ใน accepted output
+ผู้ใช้เข้าใจ warning
+Human review ใช้เวลาไม่นาน
+ผลงานส่วนใหญ่แก้เพียง copy หรือรายละเอียดเล็กน้อย
+Phase 7 — Deployment
+
+ระยะเวลา: 1–2 สัปดาห์
+
+Deployment architecture
+DGX Spark
+├── Frontend
+├── API
+├── Orchestrator
+├── Redis
+├── PostgreSQL
+├── MinIO
+├── SearXNG
+├── ComfyUI
+├── Ollama/vLLM
+├── OCR
+└── Monitoring
+
+ควรแยก persistent volumes:
+
+/data/postgres
+/data/redis
+/data/minio
+/data/models
+/data/comfyui
+/data/brands
+/data/research
+/data/outputs
+/data/backups
+Monitoring
+Prometheus
+Grafana
+Loki
+GPU metrics exporter
+Disk monitoring
+Queue length
+Job duration
+Model load time
+Failure reason
+OOM alerts
+Phase 8 — Operation and Maintenance
+งานประจำ
+Update Brand Pack
+Reverify URLs
+Recheck promotion expiry
+Refresh search index
+Backup database
+Pin and test model upgrades
+Regression testing
+Review failed jobs
+Add templates
+Improve ranking and layout rules
+
+ห้าม update model แล้วใช้ production ทันที ต้องผ่าน golden test set ก่อนเสมอ
+
+16. Timeline โดยรวม
+ทีม 3 คน
+Phase	ระยะเวลา
+Feasibility	2–4 สัปดาห์
+Requirements	1–2 สัปดาห์
+Architecture	2–3 สัปดาห์
+Detailed design	3–4 สัปดาห์
+Implementation	8–12 สัปดาห์
+Testing	4–6 สัปดาห์
+UAT + Deployment	3–6 สัปดาห์
+รวม	5–8 เดือน
+ทำคนเดียว
+
+คาดการณ์ประมาณ:
+
+8–12 เดือน
+
+หากรวมงาน research เรื่อง Thai fine-tuning, AnyText adapter หรือ VAE เพิ่ม อาจยืดเป็น 12–18 เดือน
+
+17. Research Track ที่แยกจาก Production
+
+Production ต้องไม่รอ research เหล่านี้:
+
+Production Track
+Qwen-Image + deterministic text/logo compositor
+Research Track
+Thai glyph model
+AnyText2 adapter
+OCR-guided loss
+Residual VAE decoder
+Native Thai typography generation
+
+Research สำเร็จเมื่อใดค่อยนำมาแทนบางส่วน เช่น decorative headline แต่ body text และ logo ยังควร deterministic
+
+18. Architecture Decision สุดท้าย
+ใช้
+Next.js
+FastAPI
+Redis queue
+PostgreSQL
+MinIO
+SearXNG
+Playwright
+Qwen3-30B-A3B-Instruct
+Qwen-Image-2512
+ComfyUI
+Pango + HarfBuzz
+SVG/Cairo compositor
+PaddleOCR
+Human review
+ยังไม่ใช้
+AR image generation
+VQ-VAE ใหม่
+Full model fine-tuning
+AnyText2XL เป็น production dependency
+Diffusion-generated logo
+Diffusion-generated body text
+External API เป็น default path
+External service ใช้เมื่อใด
+
+ใช้เฉพาะ:
+
+Local model ไม่สามารถทำคุณภาพถึงเกณฑ์
+Cloud training burst สำหรับ LoRA/adapter
+Benchmark เทียบคุณภาพ
+Emergency overflow
+
+ทุกครั้งต้องแจ้งผู้ใช้หาก prompt, asset หรือข้อมูลถูกส่งออกนอก premise
+
+19. งานแรกที่ควรเริ่มทำจริง
+
+ไม่ควรเริ่มจาก fine-tune
+
+ให้เริ่ม Phase 0 ด้วยหนึ่ง vertical slice:
+
+Prompt:
+“ทำโปสเตอร์โปรโมต UTCC สำหรับนักเรียน ม.ปลาย”
+
+1. สร้าง UTCC Brand Pack แบบ verified
+2. สร้าง ResearchPack
+3. สร้าง DesignSpec
+4. Generate hero image ด้วย Qwen-Image
+5. Render Thai text ด้วย Pango/HarfBuzz
+6. วาง official logo
+7. สร้าง QR
+8. Compose final poster
+9. OCR + QR + logo QA
+10. แสดงใน review UI

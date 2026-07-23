@@ -1,0 +1,265 @@
+{
+  "89": {
+    "inputs": {
+      "images": [
+        "88:8",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "Preview Image"
+    }
+  },
+  "88:39": {
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "88:38": {
+    "inputs": {
+      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "88:58": {
+    "inputs": {
+      "width": 1088,
+      "height": 1328,
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "EmptySD3LatentImage"
+    }
+  },
+  "88:66": {
+    "inputs": {
+      "shift": 3.1000000000000005,
+      "model": [
+        "88:78",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": {
+      "title": "ModelSamplingAuraFlow"
+    }
+  },
+  "88:37": {
+    "inputs": {
+      "unet_name": "qwen_image_2512_fp8_e4m3fn.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "88:6": {
+    "inputs": {
+      "text": "Modern educational promotional poster for University of the Thai Chamber of Commerce UTCC). Background:+ clean light-gray raw concrete wall.Subject: confident, smiling university students wearing UTCC uniform(white shirt, dark navy tie), giving a thumbs-up pointing toward benefittext. Elements: iPad graphic, Canva & Microsoft Copilot logos, UTCCbusiness-minded student logo top-right, QR code bottom corner.Headline text DEK 69 START UP in deep navy and white. Mood: vibrant,modern, inspiring, trustworthy academic branding. High-quality graphicdesign, 4:5 aspect ratio for social media.",
+      "clip": [
+        "88:38",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "88:7": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "88:38",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Negative Prompt)"
+    }
+  },
+  "88:8": {
+    "inputs": {
+      "samples": [
+        "88:3",
+        0
+      ],
+      "vae": [
+        "88:39",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "88:73": {
+    "inputs": {
+      "lora_name": "Qwen-Image-Lightning-8steps-V1.0.safetensors",
+      "strength_model": 1,
+      "model": [
+        "88:37",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "88:3": {
+    "inputs": {
+      "seed": 913522844914361,
+      "steps": [
+        "88:82",
+        0
+      ],
+      "cfg": [
+        "88:83",
+        0
+      ],
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "88:66",
+        0
+      ],
+      "positive": [
+        "88:6",
+        0
+      ],
+      "negative": [
+        "88:7",
+        0
+      ],
+      "latent_image": [
+        "88:58",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "88:78": {
+    "inputs": {
+      "switch": [
+        "88:86",
+        0
+      ],
+      "on_false": [
+        "88:37",
+        0
+      ],
+      "on_true": [
+        "88:73",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch (Model)"
+    }
+  },
+  "88:79": {
+    "inputs": {
+      "value": 8
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Steps"
+    }
+  },
+  "88:81": {
+    "inputs": {
+      "value": 1
+    },
+    "class_type": "PrimitiveFloat",
+    "_meta": {
+      "title": "CFG"
+    }
+  },
+  "88:82": {
+    "inputs": {
+      "switch": [
+        "88:86",
+        0
+      ],
+      "on_false": [
+        "88:84",
+        0
+      ],
+      "on_true": [
+        "88:79",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch (Steps)"
+    }
+  },
+  "88:83": {
+    "inputs": {
+      "switch": [
+        "88:86",
+        0
+      ],
+      "on_false": [
+        "88:85",
+        0
+      ],
+      "on_true": [
+        "88:81",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch (CFG)"
+    }
+  },
+  "88:84": {
+    "inputs": {
+      "value": 20
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Steps"
+    }
+  },
+  "88:85": {
+    "inputs": {
+      "value": 4
+    },
+    "class_type": "PrimitiveFloat",
+    "_meta": {
+      "title": "CFG"
+    }
+  },
+  "88:86": {
+    "inputs": {
+      "value": false
+    },
+    "class_type": "PrimitiveBoolean",
+    "_meta": {
+      "title": "Enable Lightning LoRA"
+    }
+  }
+}

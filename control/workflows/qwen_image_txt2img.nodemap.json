@@ -1,0 +1,10 @@
+{
+  "prompt_node_id": "88:6",
+  "prompt_input_key": "text",
+  "seed_node_id": "88:3",
+  "seed_input_key": "seed",
+  "width_node_id": "88:58",
+  "width_input_key": "width",
+  "height_node_id": "88:58",
+  "height_input_key": "height"
+}

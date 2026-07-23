@@ -1,0 +1,421 @@
+ได้ และ ควรทำ แต่ไม่ควรแทน Brand Asset Registry ด้วยการ scrape สดทุกครั้ง
+
+แนวทางที่ถูกคือ:
+
+Web scraping = ตัวสร้าง/อัปเดต Brand Pack อัตโนมัติ
+Brand Asset Registry = แหล่งข้อมูลที่ระบบใช้งานจริง
+
+ไม่ใช่:
+
+ผู้ใช้สั่ง
+→ scrape เว็บทันที
+→ เจอรูปอะไรก็หยิบมาใช้
+
+เพราะเว็บหนึ่งเว็บอาจมี favicon, app icon, social preview, โลโก้เก่า, โลโก้ partner และภาพแคมเปญปนกันอยู่
+
+Architecture ที่แนะนำ
+User prompt: “ทำโปสเตอร์ UTCC”
+              ↓
+Entity Resolver
+ระบุว่า UTCC = มหาวิทยาลัยหอการค้าไทย
+              ↓
+Brand Registry Lookup
+              ↓
+      ┌──── มี Brand Pack ────┐
+      │                        │
+      │ ใช้ข้อมูลที่ approve   │
+      │ ตรวจ freshness เบา ๆ   │
+      └────────────┬───────────┘
+                   │
+      ไม่มี / ข้อมูลหมดอายุ
+                   ↓
+Official Website Crawler
+                   ↓
+Candidate Extractor
+                   ↓
+Verification + Confidence Scoring
+                   ↓
+สร้าง Provisional Brand Pack
+                   ↓
+คน review สั้น ๆ ครั้งแรก
+                   ↓
+Verified Brand Registry
+                   ↓
+Poster Generation
+
+ดังนั้นผู้ใช้ทั่วไปยังพิมพ์ครั้งเดียวแล้วได้งานเหมือน ChatGPT แต่ระบบหลังบ้านมี cache และ registry รองรับอยู่
+
+Web scraping ดึงอะไรได้บ้าง
+1. Organization identity — ดึงได้ค่อนข้างแม่น
+
+Crawler ควรหา JSON-LD:
+
+<script type="application/ld+json">
+{
+  "@type": "Organization",
+  "name": "...",
+  "url": "...",
+  "logo": "...",
+  "sameAs": [...]
+}
+</script>
+
+Structured data ของ Organization สามารถระบุชื่อ URL โลโก้ และบัญชี social ผ่าน sameAs ได้โดยตรง จึงควรเป็นแหล่ง candidate อันดับแรก.
+
+ลำดับความน่าเชื่อถือ:
+
+JSON-LD Organization
+> หน้า About / Contact
+> <title> และ metadata
+> ข้อความใน header/footer
+> LLM inference
+
+LLM ใช้สรุปได้ แต่ไม่ควรเป็น source of truth
+
+2. Verified domains — ดึงและตรวจได้
+
+เริ่มจาก domain ที่ผู้ใช้กล่าวถึงหรือ search result แล้วตรวจ:
+
+HTTPS domain
+canonical URL
+redirect chain
+Organization url
+social accounts ลิงก์กลับมาที่ domain เดียวกันหรือไม่
+domain ถูกใช้อย่างสม่ำเสมอในหน้า contact และ footer หรือไม่
+
+ควรเก็บ:
+
+{
+  "domain": "example.ac.th",
+  "status": "verified",
+  "evidence": [
+    "organization_jsonld",
+    "canonical_url",
+    "official_contact_page"
+  ],
+  "verified_at": "2026-07-22"
+}
+3. Logo files และ variants — ดึงได้ แต่ต้องคัดกรองหนัก
+แหล่ง candidate ตามลำดับ
+Organization.logo จาก JSON-LD
+หน้า Brand Guidelines / Media Kit
+SVG หรือภาพใน website header
+Logo ใน footer
+Official PDF หรือ brochure
+Web App Manifest icons
+Favicon
+Open Graph image
+
+Web App Manifest มีรายการ icons จริง แต่ความหมายคือไอคอนสำหรับแอปหรือระบบปฏิบัติการ ไม่ได้ยืนยันว่าเป็นโลโก้หลักสำหรับงานสิ่งพิมพ์.
+
+ในทำนองเดียวกัน og:image คือภาพที่ใช้แทนหน้าเว็บเมื่อแชร์บน social graph จึงอาจเป็นภาพแคมเปญหรือ banner ไม่ใช่โลโก้.
+
+ดังนั้นห้ามตั้งกฎว่า:
+
+og:image = logo
+favicon = official print logo
+Logo candidate scoring
+
+ตัวอย่างคะแนน:
+
+เงื่อนไข	คะแนน
+อยู่ใน official brand guideline	+40
+มาจาก Organization.logo	+30
+อยู่ใน header หลายหน้า	+20
+เป็น SVG	+15
+ชื่อไฟล์มี logo, brand, wordmark	+10
+มี transparent background	+5
+เป็น favicon ขนาดเล็ก	−15
+มาจาก og:image	−20
+มีคำว่า partner/sponsor	−30
+aspect ratio เปลี่ยนระหว่างหน้า	−20
+
+เช่น:
+
+score ≥ 80  → auto-accept candidate ได้
+60–79       → provisional และให้คนตรวจ
+< 60        → ไม่ใช้
+
+สำหรับ MVP ผมยังแนะนำให้คนกด approve โลโก้ครั้งแรก เพราะใช้เวลาไม่กี่วินาที แต่ลดความเสียหายได้มาก
+
+4. Brand colors — scrape ได้ แต่ต้องแยก “สีเว็บไซต์” จาก “สีแบรนด์”
+
+Crawler สามารถอ่าน:
+
+CSS custom properties
+Tailwind/build CSS
+สีของโลโก้ SVG
+ปุ่มหลัก
+navigation
+brand guideline PDF
+
+แต่อย่าเอาสีที่ใช้บ่อยที่สุดบนเว็บเป็น brand color ตรง ๆ เพราะอาจได้:
+
+สีพื้นขาว
+สีข้อความดำ
+สี cookie banner
+สี plugin
+สี campaign ชั่วคราว
+
+ควรใช้หลักฐานรวมกัน:
+
+สีจาก brand guideline
+    > สีใน official logo SVG
+    > CSS variable ที่มีชื่อ brand/primary
+    > สีที่ซ้ำใน header + CTA + footer
+    > สีที่ VLM เดาจาก screenshot
+
+ตัวอย่าง record:
+
+{
+  "hex": "#123A78",
+  "role": "primary",
+  "confidence": 0.93,
+  "sources": [
+    "logo_svg_fill",
+    "css_variable_--brand-primary",
+    "brand_pdf_page_4"
+  ]
+}
+5. Approved fonts — scrape ได้บางส่วนเท่านั้น
+
+ระบบตรวจ CSS ได้ว่าเว็บไซต์กำลังใช้ฟอนต์อะไร เช่น:
+
+font-family: "Sarabun", sans-serif;
+
+แต่ฟอนต์บนเว็บไซต์อาจไม่ใช่ฟอนต์ที่แบรนด์อนุมัติให้ใช้ใน poster เสมอไป
+
+ควรแยก:
+
+{
+  "web_fonts_detected": ["Sarabun"],
+  "approved_design_fonts": [],
+  "font_status": "inferred_not_verified"
+}
+
+เฉพาะกรณีพบใน brand guideline หรือ design manual จึงเปลี่ยนเป็น:
+
+{
+  "approved_design_fonts": ["Sarabun", "Kanit"],
+  "font_status": "verified"
+}
+
+ถ้าหาไม่พบ ให้ระบบเลือกฟอนต์โอเพนซอร์สที่เข้ากับแบรนด์ แต่ต้องบันทึกว่าเป็น system_selected_font ไม่ใช่ official font
+
+6. Clear-space rules — scrape อัตโนมัติได้ยากที่สุด
+
+Clear-space rule มักไม่อยู่ใน HTML หรือ CSS แต่จะอยู่ใน:
+
+Brand guideline PDF
+Media kit
+Logo usage guide
+SVG template ที่มีพื้นที่ว่าง
+เอกสาร identity manual
+
+ดังนั้นระบบควรทำ:
+
+ค้นหน้า brand / media / press / download
+→ หา PDF
+→ อ่านหัวข้อ Logo Usage / Clear Space / Minimum Size
+→ extract rule
+→ ให้ VLM หรือ parser วิเคราะห์ diagram
+→ เก็บพร้อมหน้าหลักฐาน
+
+ถ้าหาไม่พบ ห้ามเดาว่าเป็น official rule
+
+ใช้ค่า fallback ของระบบแทน เช่น:
+
+{
+  "clear_space_ratio": 0.15,
+  "source": "system_default",
+  "verified": false
+}
+
+คน review ยังเห็นได้ว่ากฎนี้เป็น default ไม่ใช่ข้อมูลของแบรนด์
+
+7. Official URLs และ social accounts — เหมาะกับ scraping มาก
+
+ดึงจาก:
+
+sameAs ใน Organization JSON-LD
+footer
+contact page
+social icons
+canonical links
+official directory page
+
+แต่ต้องตรวจ domain และ account ซ้ำ เช่น social account ควร:
+
+ถูกลิงก์จาก official website
+ใช้ชื่อองค์กรตรงกัน
+ลิงก์กลับไป official domain
+ไม่ใช่สาขา คณะ ชมรม หรือ fan page โดยไม่ได้ตั้งใจ
+
+Structured organization data รองรับ sameAs สำหรับระบุโปรไฟล์อื่นขององค์กรโดยตรง.
+
+Source snapshots และ Verification history
+
+สองรายการนี้ไม่ต้อง scrape จากเว็บโดยตรง แต่ระบบสร้างเองทุกครั้งที่ crawl
+
+Source snapshot
+{
+  "source_id": "src_123",
+  "url": "official-page",
+  "retrieved_at": "2026-07-22T08:30:00+07:00",
+  "content_hash": "sha256...",
+  "http_status": 200,
+  "content_type": "text/html",
+  "local_snapshot_path": "snapshots/utcc/...",
+  "robots_allowed": true
+}
+
+Crawler ควรเคารพ robots.txt ตาม Robots Exclusion Protocol และควรตั้ง rate limit, user agent และ allowlist สำหรับ official domains.
+
+Verification history
+{
+  "asset_id": "utcc_primary_logo",
+  "events": [
+    {
+      "action": "discovered",
+      "method": "organization_jsonld",
+      "timestamp": "..."
+    },
+    {
+      "action": "auto_scored",
+      "score": 91,
+      "timestamp": "..."
+    },
+    {
+      "action": "human_approved",
+      "reviewer": "admin",
+      "timestamp": "..."
+    }
+  ]
+}
+Reliability ที่คาดได้
+ข้อมูล	Auto-extract	ใช้โดยไม่ตรวจได้ไหม
+ชื่อองค์กร	90–98%	ส่วนใหญ่ได้
+Official domain	90–98%	ส่วนใหญ่ได้
+Official URLs	90–98%	ได้หลังตรวจ domain
+Social accounts	80–95%	ได้เมื่อมาจาก official site
+Logo candidate	80–95%	ควร approve ครั้งแรก
+Logo variant ที่เหมาะ	70–90%	QA เพิ่ม
+Brand colors	70–90%	ควรมี confidence
+Web fonts	80–95%	แต่ไม่ได้แปลว่า approved
+Approved design fonts	40–70%	ต้องมี guideline
+Clear-space rules	20–50%	อย่า auto-claim
+Trademark usage permission	ต่ำ	ให้ระบบตัดสินเองไม่ได้
+
+ตัวเลขนี้เป็น engineering estimate สำหรับออกแบบระบบ ไม่ใช่ benchmark มาตรฐาน
+
+วิธีที่เหมาะกับ Human-in-the-loop ของคุณ
+
+ไม่จำเป็นต้องให้คนกรอก Brand Registry เองทั้งหมด
+
+ให้ระบบทำแบบนี้:
+
+ระบบ scrape และเติมข้อมูลให้อัตโนมัติ 90%
+                ↓
+แสดงหน้า Brand Review หนึ่งครั้ง
+                ↓
+[✓] ชื่อองค์กร
+[✓] Official domain
+[เลือก] โลโก้หลักจาก 3 candidates
+[✓] สีหลัก
+[?] ฟอนต์เป็น inferred
+[ไม่พบ] clear-space guideline
+                ↓
+กด Approve
+                ↓
+ครั้งต่อไปสร้างอัตโนมัติ
+
+คนไม่ต้องดาวน์โหลดแล้วอัปโหลด asset เอง และไม่ต้องตรวจทุก poster เพียงตรวจ Brand Pack ครั้งแรกหรือเมื่อเว็บมีการเปลี่ยนแปลง
+
+Freshness strategy
+
+อย่า scrape ใหม่ทั้งหมดทุก request เพราะ:
+
+ช้า
+เว็บอาจล่ม
+ผลไม่คงที่
+candidate อาจเปลี่ยน
+ทำ audit ยาก
+
+ใช้ TTL:
+
+ข้อมูล	ตรวจใหม่
+Logo/brand guideline	ทุก 30–90 วัน
+สีและฟอนต์	ทุก 30–90 วัน
+Social URLs	ทุก 14–30 วัน
+Event/admission/promotion	ทุก 1–7 วัน
+QR destination	ก่อนสร้างทุกครั้ง
+URL availability	ก่อน export
+
+ถ้า content hash ของ source เปลี่ยน ให้สร้าง event:
+
+BRAND_SOURCE_CHANGED
+
+แต่ไม่ overwrite asset ที่ approve แล้วทันที ให้ตั้งสถานะ review_required
+
+Component ที่ควรเพิ่มใน F3
+
+ผมจะเปลี่ยน F3 จากเดิมเป็น:
+
+F3 — Automated Brand Discovery & Asset Registry
+F3.1 Entity resolution
+
+ระบุองค์กรและ official domains
+
+F3.2 Official web crawler
+
+อ่าน HTML, CSS, JSON-LD, SVG, manifest และ PDF
+
+F3.3 Candidate extraction
+
+ดึง logo, colors, fonts, URLs และ social accounts
+
+F3.4 Asset verification
+
+ให้คะแนน source, position, format, reuse และ consistency
+
+F3.5 Brand review
+
+คน approve เฉพาะข้อมูลที่กำกวม
+
+F3.6 Versioned registry
+
+เก็บ verified Brand Pack พร้อม hash และ history
+
+F3.7 Freshness monitor
+
+ตรวจ source เปลี่ยนแปลงและแจ้งให้ reverify
+
+คำตัดสิน
+
+ใช้ web scraping ได้และควรใช้มาก เพราะช่วยลด onboarding และทำให้ UX ใกล้ “พิมพ์แล้วเจนเลย”
+
+แต่ต้องออกแบบเป็น:
+
+scrape
+→ extract candidates
+→ verify
+→ cache/version
+→ registry
+→ compose
+
+ไม่ใช่:
+
+scrape
+→ ใช้ทันที
+
+Brand Registry ยังจำเป็น เพราะมันให้:
+
+ความเร็ว
+ความคงที่
+traceability
+version control
+confidence
+การย้อนกลับ
+ป้องกันเว็บเปลี่ยนแล้วงานพัง
+
+สรุปคือ web scraping เป็นระบบนำเข้าข้อมูลอัตโนมัติของ Registry ไม่ใช่ตัวแทน Registry.

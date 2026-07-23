@@ -1,0 +1,34 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: imagin
+      POSTGRES_PASSWORD: imagin
+      POSTGRES_DB: imagin
+    ports:
+      - "5433:5432"
+    volumes:
+      - imagin_pg_data:/var/lib/postgresql/data
+
+  control:
+    build: ./control
+    env_file: .env
+    volumes:
+      - ./control:/app
+      - imagin_objects:/data/objects
+      # Bind-mounted (not a named volume) so poster.png / qa_report.json land
+      # directly in ./output on this PC and are reviewable without reaching
+      # into the container or a Docker-managed volume.
+      - ./output:/app/output
+    depends_on:
+      - postgres
+    extra_hosts:
+      # ComfyUI on the DGX is reached from this PC at localhost:8188 (via your
+      # tunnel/port-forward). Inside a Linux container, "localhost" means the
+      # container itself, not the host PC, so the app must instead address the
+      # host PC as host.docker.internal — this line makes that name resolve.
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  imagin_pg_data:
+  imagin_objects:
