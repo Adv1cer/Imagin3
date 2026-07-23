@@ -20,6 +20,11 @@ services:
       # directly in ./output on this PC and are reviewable without reaching
       # into the container or a Docker-managed volume.
       - ./output:/app/output
+      # PaddleOCR/PaddleX downloads its models into /root/.paddlex at first
+      # use. Persisting that directory in a named volume means disposable
+      # `docker compose run --rm` containers reuse the cached models instead
+      # of re-downloading ~90MB on every pytest/CLI invocation.
+      - paddlex_models:/root/.paddlex
     depends_on:
       - postgres
     extra_hosts:
@@ -32,3 +37,4 @@ services:
 volumes:
   imagin_pg_data:
   imagin_objects:
+  paddlex_models:

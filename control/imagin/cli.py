@@ -188,6 +188,81 @@ def check_schema_up_to_date(database_url: str) -> None:
         )
 
 
+def _report_no_logo(exc) -> int:
+    """Present a no-usable-logo outcome as a clean, actionable message plus
+    a machine-readable artifact — never a raw traceback.
+
+    Automatic discovery ran and simply found nothing on the official domain
+    that clears the logo usability bar. That's an expected, recoverable
+    outcome (the org may not publish a downloadable logo, or only behind a
+    login), not a crash — so the end user gets next steps, and the full
+    structured evidence is written to output/brand_discovery.json for audit.
+    """
+    fallback = getattr(exc, "fallback", None)
+    print(f"ERROR: {exc}", file=sys.stderr)
+
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    if fallback is not None:
+        (OUTPUT_DIR / "brand_discovery.json").write_text(
+            json.dumps(
+                {
+                    "organizationName": fallback.organization_name,
+                    "officialDomain": fallback.official_domain,
+                    "outcome": fallback.outcome,
+                    "consideredCandidates": fallback.considered,
+                    "rejectedCandidates": fallback.rejected,
+                    "suggestedActions": list(fallback.suggested_actions),
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        print(
+            "No official logo was auto-discovered. Your options:\n"
+            "  1. Re-run with the logo omitted (once that flag is wired), or\n"
+            "  2. Supply a manually-verified logo asset for this organization.\n"
+            "Full evidence (candidates considered and why each was rejected) "
+            "written to output/brand_discovery.json.",
+            file=sys.stderr,
+        )
+    return 3
+
+
+def _report_background_failure(exc) -> int:
+    """Every background-generation attempt contained readable AI-generated
+    text, so the pipeline refused to compose. Expected, recoverable, and
+    auditable — never a raw traceback. Attempted seeds and rejection
+    reasons go to output/background_attempts.json."""
+    print(f"ERROR: {exc}", file=sys.stderr)
+
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    attempts = getattr(exc, "attempts", [])
+    (OUTPUT_DIR / "background_attempts.json").write_text(
+        json.dumps(
+            [
+                {
+                    "seed": a.seed,
+                    "accepted": a.accepted,
+                    "rejectionReason": a.rejection_reason,
+                    "detectedTexts": a.detected_texts,
+                }
+                for a in attempts
+            ],
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    print(
+        "The image model kept generating text/typography in the background. "
+        "Options: re-run with a different --seed, or strengthen the workflow's "
+        "negative prompt. Attempt log written to output/background_attempts.json.",
+        file=sys.stderr,
+    )
+    return 4
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
 
@@ -206,19 +281,28 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    from .pipeline import run_poster_generation  # see NOTE at top of file
+    # Imported lazily (see NOTE at top of file). NoUsableBrandAssetError
+    # lives in brand.registry, which imports no native deps, but we keep it
+    # in the lazy block so `import imagin.cli` stays PyGObject-free too.
+    from .brand.registry import NoUsableBrandAssetError
+    from .pipeline import BackgroundTextError, run_poster_generation
 
     engine = get_engine(settings.database_url)
     object_store = LocalObjectStore(settings.object_store_root)
     comfyui_client = ComfyUiClient(settings.comfyui_base_url, client=http_client)
 
-    with Session(engine) as session:
-        result = run_poster_generation(
-            session=session, object_store=object_store, http_client=http_client,
-            comfyui_client=comfyui_client, workflow=workflow, node_map=node_map, prompt=prompt,
-            org_name=args.org_name, official_domain=settings.utcc_official_domain,
-            qr_target_url=qr_target_url, seed=args.seed,
-        )
+    try:
+        with Session(engine) as session:
+            result = run_poster_generation(
+                session=session, object_store=object_store, http_client=http_client,
+                comfyui_client=comfyui_client, workflow=workflow, node_map=node_map, prompt=prompt,
+                org_name=args.org_name, official_domain=settings.utcc_official_domain,
+                qr_target_url=qr_target_url, seed=args.seed,
+            )
+    except NoUsableBrandAssetError as exc:
+        return _report_no_logo(exc)
+    except BackgroundTextError as exc:
+        return _report_background_failure(exc)
 
     OUTPUT_DIR.mkdir(exist_ok=True)
     poster_bytes = object_store.get(result.poster_png_storage_key)

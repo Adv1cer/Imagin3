@@ -1,6 +1,12 @@
 from dataclasses import dataclass
 
-HARD_GATE_NAMES = {"ocr_exact_match", "qr_decode_match", "logo_provenance_match", "no_text_overflow"}
+HARD_GATE_NAMES = {
+    "ocr_exact_match",
+    "qr_decode_match",
+    "logo_provenance_match",
+    "no_text_overflow",
+    "no_unexpected_text",
+}
 
 
 @dataclass(frozen=True)

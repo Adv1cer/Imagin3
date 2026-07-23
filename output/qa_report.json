@@ -1,0 +1,30 @@
+{
+  "overallStatus": "pass",
+  "checks": [
+    {
+      "name": "ocr_exact_match",
+      "passed": true,
+      "detail": "block='headline' matched exactly via variant='raw_3x' after 1 attempt(s); block='body' matched exactly via variant='raw_3x' after 1 attempt(s); block='cta' matched exactly via variant='raw_3x' after 1 attempt(s)"
+    },
+    {
+      "name": "no_unexpected_text",
+      "passed": true,
+      "detail": "no readable text outside 5 allowed region(s) (5 detection(s) scanned)"
+    },
+    {
+      "name": "qr_decode_match",
+      "passed": true,
+      "detail": "expected https://www.utcc.ac.th/"
+    },
+    {
+      "name": "logo_provenance_match",
+      "passed": true,
+      "detail": "asset 622e73bd-4ed3-417a-9d27-66f13dda0862 version 2"
+    },
+    {
+      "name": "no_text_overflow",
+      "passed": true,
+      "detail": "compose_poster raises TextOverflowError on failure, so reaching here means no overflow"
+    }
+  ]
+}

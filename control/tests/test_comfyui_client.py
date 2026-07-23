@@ -35,6 +35,35 @@ def test_patch_qwen_image_workflow_sets_prompt_seed_and_dimensions():
     assert SAMPLE_WORKFLOW["6"]["inputs"]["text"] == "placeholder positive"
 
 
+def test_patch_qwen_image_workflow_sets_negative_prompt_when_mapped():
+    node_map_with_negative = WorkflowNodeMap(
+        prompt_node_id="6", prompt_input_key="text",
+        seed_node_id="3", seed_input_key="seed",
+        width_node_id="5", width_input_key="width",
+        height_node_id="5", height_input_key="height",
+        negative_prompt_node_id="7", negative_prompt_input_key="text",
+    )
+
+    patched = patch_qwen_image_workflow(
+        SAMPLE_WORKFLOW, node_map_with_negative, prompt_text="hero", seed=1,
+        width=1080, height=1350, negative_prompt_text="no text, no logo, no watermark",
+    )
+
+    assert patched["7"]["inputs"]["text"] == "no text, no logo, no watermark"
+    assert SAMPLE_WORKFLOW["7"]["inputs"]["text"] == "placeholder negative"
+
+
+def test_patch_qwen_image_workflow_skips_negative_prompt_when_unmapped():
+    # Node maps without negative fields (all existing ones) stay valid: the
+    # negative text is simply not applied, and nothing raises.
+    patched = patch_qwen_image_workflow(
+        SAMPLE_WORKFLOW, SAMPLE_NODE_MAP, prompt_text="hero", seed=1,
+        width=1080, height=1350, negative_prompt_text="no text",
+    )
+
+    assert patched["7"]["inputs"]["text"] == "placeholder negative"
+
+
 def test_patch_qwen_image_workflow_raises_on_unknown_mapped_node():
     bad_map = WorkflowNodeMap(
         prompt_node_id="does-not-exist", prompt_input_key="text",

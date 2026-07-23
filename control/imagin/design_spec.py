@@ -58,7 +58,15 @@ def build_poster_design_spec(prompt: str, brand_profile_id: str, brand_asset_id:
         template_id=TEMPLATE_ID,
         copy=copy,
         qr_target_url=qr_target_url,
-        negative_prompt=["text", "logo", "watermark", "qr code"],
+        # Image-only background constraints. The negative prompt lowers the
+        # odds of the model drawing text/typography, but it is advisory —
+        # the pipeline's pre-composition OCR background gate is what
+        # actually enforces a text-free background.
+        negative_prompt=[
+            "text", "letters", "words", "typography", "logo", "watermark",
+            "signage", "symbols", "poster design", "captions", "qr code",
+            "writing", "characters", "subtitles",
+        ],
         brand_profile_id=brand_profile_id,
         brand_asset_id=brand_asset_id,
     )

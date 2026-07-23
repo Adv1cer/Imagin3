@@ -37,6 +37,15 @@ class WorkflowNodeMap:
     width_input_key: str
     height_node_id: str
     height_input_key: str
+    # Optional: the negative-prompt CLIPTextEncode node. When present, the
+    # pipeline's image-only constraints ("no text, no letters, no logo,
+    # no watermark, ...") are written into the workflow's real negative
+    # prompt instead of being silently dropped. Optional so existing node
+    # maps stay valid; the OCR background gate enforces text-free output
+    # either way — the negative prompt just raises the odds of a clean
+    # generation on the first attempt.
+    negative_prompt_node_id: str | None = None
+    negative_prompt_input_key: str | None = None
 
 
 def _validate_and_set(workflow: dict, node_id: str, input_key: str, value) -> None:
@@ -48,13 +57,33 @@ def _validate_and_set(workflow: dict, node_id: str, input_key: str, value) -> No
     node["inputs"][input_key] = value
 
 
-def patch_qwen_image_workflow(workflow: dict, node_map: WorkflowNodeMap, prompt_text: str, seed: int, width: int, height: int) -> dict:
+def patch_qwen_image_workflow(
+    workflow: dict,
+    node_map: WorkflowNodeMap,
+    prompt_text: str,
+    seed: int,
+    width: int,
+    height: int,
+    negative_prompt_text: str | None = None,
+) -> dict:
     patched = {node_id: {**node, "inputs": dict(node["inputs"])} for node_id, node in workflow.items()}
 
     _validate_and_set(patched, node_map.prompt_node_id, node_map.prompt_input_key, prompt_text)
     _validate_and_set(patched, node_map.seed_node_id, node_map.seed_input_key, seed)
     _validate_and_set(patched, node_map.width_node_id, node_map.width_input_key, width)
     _validate_and_set(patched, node_map.height_node_id, node_map.height_input_key, height)
+
+    if (
+        negative_prompt_text is not None
+        and node_map.negative_prompt_node_id is not None
+        and node_map.negative_prompt_input_key is not None
+    ):
+        _validate_and_set(
+            patched,
+            node_map.negative_prompt_node_id,
+            node_map.negative_prompt_input_key,
+            negative_prompt_text,
+        )
 
     return patched
 
@@ -97,8 +126,20 @@ class ComfyUiClient:
                 return response.content
         raise ComfyUiError("ComfyUI history entry contained no output images")
 
-    def generate_image(self, workflow: dict, node_map: WorkflowNodeMap, prompt_text: str, seed: int, width: int, height: int) -> bytes:
-        patched = patch_qwen_image_workflow(workflow, node_map, prompt_text, seed, width, height)
+    def generate_image(
+        self,
+        workflow: dict,
+        node_map: WorkflowNodeMap,
+        prompt_text: str,
+        seed: int,
+        width: int,
+        height: int,
+        negative_prompt_text: str | None = None,
+    ) -> bytes:
+        patched = patch_qwen_image_workflow(
+            workflow, node_map, prompt_text, seed, width, height,
+            negative_prompt_text=negative_prompt_text,
+        )
         prompt_id = self.submit(patched)
         history_entry = self.wait_for_completion(prompt_id)
         return self.fetch_output_image(history_entry)
