@@ -1,29 +1,22 @@
 import hashlib
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 from sqlalchemy.orm import Session
 
 from .brand.registry import resolve_brand
 from .comfyui_client import ComfyUiClient, WorkflowNodeMap
-from .compositor import compose_poster
-from .design_spec import build_poster_design_spec
+from .compositor import compose_poster_from_spec
+from .design_spec import DesignSpec, build_poster_design_spec
 from .object_store import LocalObjectStore
+from .qa.layout_check import check_layout_contract
 from .qa.logo_check import check_logo_provenance
 from .qa.ocr_check import check_text_blocks_exact_match, detect_text_regions
 from .qa.qr_check import check_qr
 from .qa.report import QaCheck, QaReport, build_qa_report
 from .qa.unexpected_text import AllowedRegion, check_no_unexpected_text
 from .qr_gen import generate_qr_png
-
-# --- Background generation constraints -----------------------------------
-# The hero is a *background*: it must arrive image-only. Both prompts state
-# that explicitly, and the OCR gate below enforces it regardless of whether
-# the model listened.
-IMAGE_ONLY_PROMPT_SUFFIX = (
-    "clean visual background, empty composition space, photographic scene only, "
-    "no text, no letters, no words, no typography, no logo, no watermark, "
-    "no signage, no symbols, no poster design, no captions"
-)
+from .subject_detection import SubjectDetector
+from .templates import IMAGE_ONLY_PROMPT_SUFFIX, build_hero_prompt  # noqa: F401 (suffix re-exported for compat)
 
 # Deterministic retry-seed derivation: attempt 0 uses the requested seed;
 # attempt N uses seed + N * stride (mod 2^31). Reproducible: the same
@@ -130,6 +123,8 @@ class PipelineResult:
     poster_png_storage_key: str
     qa_report: QaReport
     background_attempts: list[BackgroundAttempt] = field(default_factory=list)
+    selected_template: str = ""
+    design_metadata: dict = field(default_factory=dict)
 
 
 def _allowed_regions(composed) -> list[AllowedRegion]:
@@ -146,6 +141,74 @@ def _allowed_regions(composed) -> list[AllowedRegion]:
     return regions
 
 
+def _rect_dict(r) -> dict:
+    return {"x": r.x, "y": r.y, "width": r.width, "height": r.height}
+
+
+def build_design_metadata(
+    spec: DesignSpec,
+    composed,
+    requested_seed: int,
+    background_attempts: list[BackgroundAttempt],
+    resolved_brand,
+) -> dict:
+    """Reproducible design metadata: everything needed to debug or replay
+    this exact output. Deterministic content for identical inputs."""
+    template = spec.template
+    layout = spec.layout
+    return {
+        "template": spec.template_id,
+        "canvas": {"width": spec.width, "height": spec.height},
+        "normalizedRegions": {
+            "logo": asdict(template.logo_region),
+            "panel": asdict(template.panel_region),
+            "headline": asdict(template.headline_region),
+            "body": asdict(template.body_region),
+            "action": asdict(template.action_region),
+            "hero": asdict(template.hero_region),
+            "protectedSubject": asdict(template.protected_subject_region),
+        },
+        "pixelRegions": {
+            "logo": _rect_dict(layout.logo),
+            "panel": _rect_dict(layout.panel),
+            "headline": _rect_dict(layout.headline),
+            "body": _rect_dict(layout.body),
+            "action": _rect_dict(layout.action),
+            "hero": _rect_dict(layout.hero),
+            "protectedSubject": _rect_dict(layout.protected_subject),
+        },
+        "composedRegions": {
+            "textBlocks": [
+                {"name": b.name, **_rect_dict(b)} for b in composed.text_blocks
+            ],
+            "logo": _rect_dict(composed.logo_region) if composed.logo_region else None,
+            "qr": _rect_dict(composed.qr_region) if composed.qr_region else None,
+            "panel": _rect_dict(composed.panel_region) if composed.panel_region else None,
+            "action": _rect_dict(composed.action_region) if composed.action_region else None,
+        },
+        "palette": {
+            "text": list(spec.palette.text_rgb),
+            "accent": list(spec.palette.accent_rgb),
+            "panel": list(spec.palette.panel_rgb),
+            "source": spec.palette.source,
+        },
+        "typography": {
+            "fontSizes": composed.font_sizes,
+            "alignment": template.text_align,
+            "spacingScale": template.spacing_scale,
+        },
+        "panelStyle": {"style": template.panel_style, "opacity": template.panel_opacity},
+        "requestedSeed": requested_seed,
+        "backgroundAttemptSeeds": [a.seed for a in background_attempts],
+        "brand": {
+            "profileId": str(resolved_brand.brand_profile_id),
+            "profileVersion": resolved_brand.profile_version,
+            "assetId": str(resolved_brand.logo_asset_id),
+            "assetSha256": resolved_brand.logo_sha256,
+        },
+    }
+
+
 def run_poster_generation(
     session: Session,
     object_store: LocalObjectStore,
@@ -159,17 +222,24 @@ def run_poster_generation(
     qr_target_url: str,
     seed: int = 0,
     background_max_retries: int = DEFAULT_BACKGROUND_MAX_RETRIES,
+    template_id: str | None = None,
+    subject_detector: SubjectDetector | None = None,
 ) -> PipelineResult:
     resolved_brand = resolve_brand(session, org_name, official_domain, http_client, object_store)
+    logo_png = object_store.get(resolved_brand.logo_storage_key)
 
+    # ONE design spec, built once, consumed by BOTH the background prompt
+    # builder and the compositor — the shared layout contract.
     spec = build_poster_design_spec(
         prompt=prompt,
         brand_profile_id=str(resolved_brand.brand_profile_id),
         brand_asset_id=str(resolved_brand.logo_asset_id),
         qr_target_url=qr_target_url,
+        template_id=template_id,
+        logo_png=logo_png,
     )
 
-    hero_prompt = f"{prompt}, {IMAGE_ONLY_PROMPT_SUFFIX}"
+    hero_prompt = build_hero_prompt(prompt, spec.template)
     negative_prompt_text = ", ".join(spec.negative_prompt)
 
     hero_png, background_attempts = generate_validated_background(
@@ -184,13 +254,9 @@ def run_poster_generation(
         max_retries=background_max_retries,
     )
 
-    logo_png = object_store.get(resolved_brand.logo_storage_key)
     qr_png = generate_qr_png(spec.qr_target_url)
 
-    composed = compose_poster(
-        hero_png=hero_png, headline=spec.copy.headline, body_lines=spec.copy.body,
-        cta=spec.copy.cta, logo_png=logo_png, qr_png=qr_png, width=spec.width, height=spec.height,
-    )
+    composed = compose_poster_from_spec(hero_png, spec, logo_png, qr_png)
     poster_png = composed.png_bytes
 
     # The provenance gate hashes the bytes actually composited into the
@@ -199,28 +265,21 @@ def run_poster_generation(
     # itself, which would be a tautology that can never fail.
     composited_logo_sha256 = hashlib.sha256(logo_png).hexdigest()
 
-    # OCR is scoped per text block (cropped to that block's own bounding
-    # box with Thai-mark-safe padding, multiple deterministic variants)
-    # and compared against only that block's own text with exact equality.
     ocr_passed, ocr_detail = check_text_blocks_exact_match(poster_png, composed.text_blocks)
 
-    # Unexpected-text hard gate: nothing readable may exist outside the
-    # compositor's text blocks, the verified logo box, and the QR box.
     unexpected_passed, unexpected_detail, _unexpected = check_no_unexpected_text(
         poster_png, _allowed_regions(composed)
     )
 
+    subject_boxes = subject_detector.detect(poster_png) if subject_detector is not None else []
+    layout_passed, layout_detail = check_layout_contract(
+        composed, spec.template, spec.layout, spec.palette, subject_boxes
+    )
+
     checks = [
-        QaCheck(
-            name="ocr_exact_match",
-            passed=ocr_passed,
-            detail=ocr_detail,
-        ),
-        QaCheck(
-            name="no_unexpected_text",
-            passed=unexpected_passed,
-            detail=unexpected_detail,
-        ),
+        QaCheck(name="ocr_exact_match", passed=ocr_passed, detail=ocr_detail),
+        QaCheck(name="no_unexpected_text", passed=unexpected_passed, detail=unexpected_detail),
+        QaCheck(name="layout_contract_match", passed=layout_passed, detail=layout_detail),
         QaCheck(
             name="qr_decode_match",
             passed=check_qr(poster_png, spec.qr_target_url),
@@ -231,13 +290,17 @@ def run_poster_generation(
             passed=check_logo_provenance(composited_logo_sha256, resolved_brand.logo_sha256),
             detail=f"asset {resolved_brand.logo_asset_id} version {resolved_brand.profile_version}",
         ),
-        QaCheck(name="no_text_overflow", passed=True, detail="compose_poster raises TextOverflowError on failure, so reaching here means no overflow"),
+        QaCheck(name="no_text_overflow", passed=True, detail="compose raises TextOverflowError on failure, so reaching here means no overflow"),
     ]
     report = build_qa_report(checks)
+
+    design_metadata = build_design_metadata(spec, composed, seed, background_attempts, resolved_brand)
 
     stored = object_store.put(poster_png, suffix=".png")
     return PipelineResult(
         poster_png_storage_key=stored.storage_key,
         qa_report=report,
         background_attempts=background_attempts,
+        selected_template=spec.template_id,
+        design_metadata=design_metadata,
     )

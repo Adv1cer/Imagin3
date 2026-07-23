@@ -6,6 +6,7 @@ HARD_GATE_NAMES = {
     "logo_provenance_match",
     "no_text_overflow",
     "no_unexpected_text",
+    "layout_contract_match",
 }
 
 

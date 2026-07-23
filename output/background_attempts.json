@@ -1,0 +1,57 @@
+[
+  {
+    "seed": 42,
+    "accepted": false,
+    "rejectionReason": "background contains readable text: ['University', 'of', 'thau', 'Chamber', 'of', 'Commence', 'DEK', '69', 'UTSC', 'START', 'UP', 'Canva', '&', 'Microsoft', 'Copiot']",
+    "detectedTexts": [
+      "University",
+      "of",
+      "thau",
+      "Chamber",
+      "of",
+      "Commence",
+      "DEK",
+      "69",
+      "UTSC",
+      "START",
+      "UP",
+      "Canva",
+      "&",
+      "Microsoft",
+      "Copiot"
+    ]
+  },
+  {
+    "seed": 104771,
+    "accepted": false,
+    "rejectionReason": "background contains readable text: ['UTSC', 'University of Thau', 'UTSC', 'Chamber of Commence', 'UTCC Soopocstt', 'DEK 69', 'Canwa', 'START UP', 'tsC', 'UTSC', 'TGC']",
+    "detectedTexts": [
+      "UTSC",
+      "University of Thau",
+      "UTSC",
+      "Chamber of Commence",
+      "UTCC Soopocstt",
+      "DEK 69",
+      "Canwa",
+      "START UP",
+      "tsC",
+      "UTSC",
+      "TGC"
+    ]
+  },
+  {
+    "seed": 209500,
+    "accepted": false,
+    "rejectionReason": "background contains readable text: ['DEK', '69', 'UTSC', 'START', 'UP', 'Utoiht', 'Tn Mhun Chm', '1mRu']",
+    "detectedTexts": [
+      "DEK",
+      "69",
+      "UTSC",
+      "START",
+      "UP",
+      "Utoiht",
+      "Tn Mhun Chm",
+      "1mRu"
+    ]
+  }
+]

@@ -203,11 +203,21 @@ def test_run_poster_generation_produces_passing_qa_report_end_to_end(
     assert result.qa_report.overall_status in (
         "pass",
         "warn",
-    )
+    ), result.qa_report
 
     assert object_store.get(
         result.poster_png_storage_key
     )
+
+    # Template contract surfaced end to end: recorded selection, a passing
+    # layout hard gate, and reproducible design metadata.
+    assert result.selected_template == "centered_editorial"
+    layout_check = next(
+        c for c in result.qa_report.checks if c.name == "layout_contract_match"
+    )
+    assert layout_check.passed is True, layout_check.detail
+    assert result.design_metadata["template"] == "centered_editorial"
+    assert result.design_metadata["pixelRegions"]["panel"]["width"] > 0
 
 
 def test_run_poster_generation_logo_provenance_check_actually_verifies_bytes(

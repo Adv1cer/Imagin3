@@ -86,10 +86,16 @@ def test_expected_text_inside_allowed_regions_passes_and_qr_causes_no_false_fail
 
 
 def test_text_rendered_outside_all_allowed_regions_fails():
-    # Simulate the live defect: a big hallucinated word in the top half of
-    # the poster, far from every allowed region.
+    # Simulate the live defect: a big hallucinated word in the HERO region
+    # — with the centered_editorial template that's the lower half of the
+    # poster, far from every allowed region (panel ends ~57% down; logo is
+    # at the top; the action card ends above the hero band). NOTE: the
+    # coordinates must track the template layout — placing this inside or
+    # adjacent to a real text region would legitimately merge with allowed
+    # content and prove nothing.
     composed = _compose_sample_poster()
-    contaminated = _draw_text_at(composed.png_bytes, "UTCC", 350, 300, font="Noto Sans Bold 120")
+    hero_y = composed.layout.hero.y + 200
+    contaminated = _draw_text_at(composed.png_bytes, "UTCC", 350, hero_y, font="Noto Sans Bold 120")
 
     passed, detail, unexpected = check_no_unexpected_text(contaminated, _regions_of(composed))
 

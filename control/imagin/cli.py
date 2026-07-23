@@ -73,6 +73,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--org-name", default=DEFAULT_ORG_NAME, help="Organization name to resolve brand for.")
     parser.add_argument("--seed", type=int, default=42, help="ComfyUI generation seed.")
+    parser.add_argument(
+        "--template", default=None,
+        help="Poster template id (e.g. centered_editorial, hero_split_left, hero_split_right). "
+             "Omit to select automatically from the prompt's design intent.",
+    )
     return parser.parse_args
 
 
@@ -272,6 +277,16 @@ def main(argv: list[str] | None = None) -> int:
         workflow = load_workflow(resolve_workflow_path(args))
         node_map = load_node_map(resolve_node_map_path(args))
 
+        # Validate an explicit template id before doing any work; unknown
+        # ids fail with a readable list of options.
+        if args.template is not None:
+            from .template_selection import UnknownTemplateError, validate_template
+
+            try:
+                validate_template(args.template)
+            except UnknownTemplateError as exc:
+                raise PrerequisiteError(str(exc)) from exc
+
         settings = load_settings()
 
         http_client = httpx.Client()
@@ -297,7 +312,7 @@ def main(argv: list[str] | None = None) -> int:
                 session=session, object_store=object_store, http_client=http_client,
                 comfyui_client=comfyui_client, workflow=workflow, node_map=node_map, prompt=prompt,
                 org_name=args.org_name, official_domain=settings.utcc_official_domain,
-                qr_target_url=qr_target_url, seed=args.seed,
+                qr_target_url=qr_target_url, seed=args.seed, template_id=args.template,
             )
     except NoUsableBrandAssetError as exc:
         return _report_no_logo(exc)
@@ -310,11 +325,19 @@ def main(argv: list[str] | None = None) -> int:
     (OUTPUT_DIR / "qa_report.json").write_text(
         json.dumps({
             "overallStatus": result.qa_report.overall_status,
+            "selectedTemplate": result.selected_template,
             "checks": [c.__dict__ for c in result.qa_report.checks],
-        }, ensure_ascii=False, indent=2),
+            "design": result.design_metadata,
+        }, ensure_ascii=False, indent=2, sort_keys=True),
         encoding="utf-8",
     )
 
+    print(f"selected_template={result.selected_template}")
+    regions = result.design_metadata.get("pixelRegions", {})
+    for name in ("logo", "panel", "headline", "body", "action", "hero", "protectedSubject"):
+        r = regions.get(name)
+        if r:
+            print(f"  layout.{name}: ({r['x']},{r['y']}) {r['width']}x{r['height']}")
     print(f"overall_status={result.qa_report.overall_status}")
     for check in result.qa_report.checks:
         print(f"  {check.name}: {'PASS' if check.passed else 'FAIL'} — {check.detail}")

@@ -3495,3 +3495,35 @@ Only after step 7 passes in full should Tasks 0–15's automated suite be consid
 
 
 Brand name, organization name, copy, official logo, QR and product model names MUST NOT be included in the image-generation prompt unless they are required only for semantic context and cannot cause visual writing. Prefer a sanitized visual prompt that describes subjects, clothing, environment, composition and reserved regions without naming the brand. Raw generated images MUST pass a pre-composition unwanted-text/logo scan. Any unexpected writing must be rejected or removed by masked inpainting before deterministic composition.
+
+---
+
+## Exit Evidence
+
+**Date run:** 2026-07-23 (real DGX ComfyUI + real UTCC official domain).
+
+**Command:**
+```
+docker compose run --rm control python -m imagin.cli \
+  "ทำโปสเตอร์โปรโมต UTCC สำหรับนักเรียน ม.ปลาย" \
+  --qr-target-url "https://www.utcc.ac.th/" \
+  --org-name "มหาวิทยาลัยหอการค้าไทย" \
+  --seed 42 --template centered_editorial
+```
+
+**Result:** `overall_status=pass` — all six hard gates PASS in a single run:
+
+- `ocr_exact_match` — headline/body/CTA each matched exactly on the first OCR variant (`raw_3x`).
+- `no_unexpected_text` — no readable text outside the 5 allowed regions (5 detections scanned).
+- `layout_contract_match` — all content in assigned regions, margins respected, QR contained, protected subject region untouched.
+- `qr_decode_match` — decoded to `https://www.utcc.ac.th/`.
+- `logo_provenance_match` — auto-discovered UTCC logo, brand asset version 2, sha256 verified against the registry.
+- `no_text_overflow` — no region overflow.
+
+**Selected template:** `centered_editorial`. **Requested seed:** 42 (background accepted on the first attempt — no text hallucination retry needed). **Brand profile version used:** 2.
+
+**Automated suite:** 131 passed in Docker (`docker compose run --rm control pytest -v`).
+
+**Artifacts:** `output/poster.png` (1080×1350), `output/qa_report.json` (includes selected template, normalized + resolved pixel regions, palette, font sizes, seed, background-attempt seeds, brand asset id/version — reproducible design metadata).
+
+This satisfies PROD.md §15.1 Week 1 exit evidence ("one prompt through compose/QA/review"), upgraded per ADR-001 to real cache-first brand discovery and extended with anti-hallucination QA (multi-pass OCR, `no_unexpected_text`, pre-composition background validation) and the template-aware shared layout contract (`centered_editorial`, `hero_split_left`, `hero_split_right`).

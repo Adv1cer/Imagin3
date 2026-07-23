@@ -80,8 +80,6 @@ def _transparent_padded_logo(inner_w: int, inner_h: int, pad: int) -> bytes:
 
 
 def test_logo_is_fitted_without_distortion_and_transparent_margins_trimmed():
-    from imagin.compositor import LOGO_SIZE
-
     hero = _solid_png(1080, 1350)
     # 2:1 mark (200x100) with 50px transparent margins all around.
     logo = _transparent_padded_logo(200, 100, 50)
@@ -95,14 +93,15 @@ def test_logo_is_fitted_without_distortion_and_transparent_margins_trimmed():
     )
 
     region = composed.logo_region
-    assert region is not None
-    # Transparent margins trimmed -> effective source is 200x100 (2:1), so a
-    # fit into the LOGO_SIZE square must give 120x60 — same aspect ratio,
-    # never stretched to fill the square.
-    assert region.width == LOGO_SIZE
-    assert region.height == LOGO_SIZE // 2
-    # Fitted region stays inside the logo box.
-    assert region.width <= LOGO_SIZE and region.height <= LOGO_SIZE
+    layout = composed.layout
+    assert region is not None and layout is not None
+    # Transparent margins trimmed -> effective source is 200x100 (2:1); the
+    # fitted region must preserve that aspect ratio (never stretched to
+    # fill its box) and stay inside the template's assigned logo region.
+    assert abs(region.width / region.height - 2.0) < 0.06
+    assert region.x >= layout.logo.x and region.y >= layout.logo.y
+    assert region.x + region.width <= layout.logo.x + layout.logo.width + 1
+    assert region.y + region.height <= layout.logo.y + layout.logo.height + 1
 
 
 def test_compose_poster_exposes_qr_region():
@@ -122,6 +121,53 @@ def test_compose_poster_exposes_qr_region():
     assert region.width > 0 and region.height > 0
     assert region.x + region.width <= 1080
     assert region.y + region.height <= 1350
+
+
+def _contains(outer, inner, tol=4):
+    return (
+        inner.x >= outer.x - tol
+        and inner.y >= outer.y - tol
+        and inner.x + inner.width <= outer.x + outer.width + tol
+        and inner.y + inner.height <= outer.y + outer.height + tol
+    )
+
+
+def test_compositor_places_blocks_in_assigned_regions_for_all_templates():
+    # The compositor and the prompt builder consume the SAME spec; this
+    # verifies the compositor half of that contract for every template.
+    from imagin.compositor import compose_poster_from_spec
+    from imagin.design_spec import build_poster_design_spec
+    from imagin.qr_gen import generate_qr_png
+
+    for template_id in ("centered_editorial", "hero_split_left", "hero_split_right"):
+        spec = build_poster_design_spec(
+            prompt="โปสเตอร์กิจกรรมสถาบันการศึกษา",
+            brand_profile_id="p", brand_asset_id="a",
+            qr_target_url="https://example.ac.th/verified",
+            template_id=template_id,
+        )
+        hero = _solid_png(1080, 1350)
+        logo = _solid_png(200, 200, rgb=(255, 255, 255))
+        qr = generate_qr_png(spec.qr_target_url)
+
+        composed = compose_poster_from_spec(hero, spec, logo, qr)
+        layout = composed.layout
+        blocks = {b.name: b for b in composed.text_blocks}
+
+        assert _contains(layout.headline, blocks["headline"]), template_id
+        assert _contains(layout.body, blocks["body"]), template_id
+        assert _contains(layout.action, blocks["cta"]), template_id
+        assert _contains(layout.action, composed.qr_region, tol=0), template_id
+        assert _contains(layout.logo, composed.logo_region), template_id
+        # Content never enters the protected subject region.
+        protected = layout.protected_subject
+        for b in composed.text_blocks:
+            assert (
+                b.y + b.height <= protected.y
+                or b.y >= protected.y + protected.height
+                or b.x + b.width <= protected.x
+                or b.x >= protected.x + protected.width
+            ), (template_id, b.name)
 
 
 def test_compose_poster_raises_on_headline_overflow():
